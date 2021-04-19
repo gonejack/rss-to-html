@@ -3,13 +3,14 @@ package cmd
 import (
 	"bufio"
 	"errors"
+	"os"
+	"path/filepath"
+	"strings"
+
 	"github.com/antonfisher/nested-logrus-formatter"
 	"github.com/mmcdole/gofeed"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-	"os"
-	"path/filepath"
-	"strings"
 )
 
 var (
@@ -109,6 +110,12 @@ func process(feed *gofeed.Feed) (err error) {
 			"article": item.Title,
 		})
 
+		content, err := item.patchContent(feed)
+		if err != nil {
+			log.Errorf("patch content failed: %s", err)
+			continue
+		}
+
 		filename := filepath.Join(outdir, htmlName(feed.Title, item.filename()))
 		file, err := os.OpenFile(filename, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0666)
 		switch {
@@ -119,15 +126,11 @@ func process(feed *gofeed.Feed) (err error) {
 			log.Fatal(err)
 		default:
 			log.Debugf("save")
-			content, err := item.patchContent(feed)
-			if err != nil {
-				log.Errorf("patch content failed: %s", err)
-				continue
-			}
 			_, err = file.WriteString(content)
 			if err != nil {
 				log.Fatal(err)
 			}
+			_ = file.Close()
 		}
 	}
 

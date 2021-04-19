@@ -2,11 +2,12 @@ package cmd
 
 import (
 	"fmt"
-	"github.com/PuerkitoBio/goquery"
-	"github.com/mmcdole/gofeed"
 	"html"
 	"net/url"
 	"strings"
+
+	"github.com/PuerkitoBio/goquery"
+	"github.com/mmcdole/gofeed"
 )
 
 type leveItem struct {
@@ -92,6 +93,13 @@ func (o *leveItem) patchContent(feed *gofeed.Feed) (content string, err error) {
 		script.Remove()
 	})
 	doc.Find("body").PrependHtml(o.header(feed)).AppendHtml(o.footer())
+
+	if doc.Find("title").Length() == 0 {
+		doc.Find("head").AppendHtml("<title></title>")
+	}
+	if doc.Find("title").Text() == "" {
+		doc.Find("title").SetText(o.Item.Title)
+	}
 
 	return doc.Html()
 }
