@@ -3,6 +3,7 @@ package cmd
 import (
 	"bufio"
 	"errors"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -40,7 +41,7 @@ func init() {
 		//NoColors:        true,
 		HideKeys:    true,
 		CallerFirst: true,
-		FieldsOrder: []string{"feed", "article", "link", "file"},
+		FieldsOrder: []string{"feed", "feedItem", "link", "file"},
 	})
 }
 func run(c *cobra.Command, args []string) (err error) {
@@ -103,12 +104,18 @@ func process(feed *gofeed.Feed) (err error) {
 	log := logrus.WithField("feed", feed.Title)
 
 	for _, it := range feed.Items {
-		item := newLeveItem(it)
+		item := newFeedItem(it)
 
 		log := log.WithFields(logrus.Fields{
-			"feed":    feed.Title,
-			"article": item.Title,
+			"feed":  feed.Title,
+			"title": item.Title,
 		})
+
+		target := filepath.Join(outdir, htmlName(feed.Title, item.filename()))
+		if s, e := os.Stat(target); e == nil && s.Size() > 0 {
+			log.Debugf("skip")
+			continue
+		}
 
 		content, err := item.patchContent(feed)
 		if err != nil {
@@ -116,21 +123,10 @@ func process(feed *gofeed.Feed) (err error) {
 			continue
 		}
 
-		filename := filepath.Join(outdir, htmlName(feed.Title, item.filename()))
-		file, err := os.OpenFile(filename, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0666)
-		switch {
-		case errors.Is(err, os.ErrExist):
-			log.Debugf("skip")
-			continue
-		case err != nil:
+		log.Debugf("save")
+		err = ioutil.WriteFile(target, []byte(content), 0666)
+		if err != nil {
 			log.Fatal(err)
-		default:
-			log.Debugf("save")
-			_, err = file.WriteString(content)
-			if err != nil {
-				log.Fatal(err)
-			}
-			_ = file.Close()
 		}
 	}
 

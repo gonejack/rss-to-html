@@ -10,32 +10,32 @@ import (
 	"github.com/mmcdole/gofeed"
 )
 
-type leveItem struct {
+type feedItem struct {
 	*gofeed.Item
 }
 
-func (o *leveItem) UUID() string {
-	if o.Item.GUID == "" {
-		return o.Item.Link
+func (it *feedItem) UUID() string {
+	if it.Item.GUID == "" {
+		return it.Item.Link
 	}
-	return o.Item.GUID
+	return it.Item.GUID
 }
-func (o *leveItem) Content() string {
-	if o.Item.Content == "" {
-		return o.Item.Description
+func (it *feedItem) Content() string {
+	if it.Item.Content == "" {
+		return it.Item.Description
 	}
-	return o.Item.Content
+	return it.Item.Content
 }
-func (o *leveItem) filename() string {
-	title := o.Title
-	digest := md5str(o.UUID())[0:4]
+func (it *feedItem) filename() string {
+	title := it.Title
+	digest := md5str(it.UUID())[0:4]
 	if len([]rune(title)) > 30 {
 		title = string([]rune(title)[0:30]) + "..."
 	}
 	title = strings.ReplaceAll(title, "/", ".")
-	return fmt.Sprintf("[%s.%s][%s]", title, digest, o.Item.PublishedParsed.Format("2006-01-02 15.04.05"))
+	return fmt.Sprintf("[%s.%s][%s]", title, digest, it.Item.PublishedParsed.Format("2006-01-02 15.04.05"))
 }
-func (o *leveItem) header(feed *gofeed.Feed) string {
+func (it *feedItem) header(feed *gofeed.Feed) string {
 	const tpl = `
 <p>
 	<a title="Published: {published}" href="{link}" style="display:block; color: #000; padding-bottom: 10px; text-decoration: none; font-size:1em; font-weight: normal;">
@@ -45,15 +45,15 @@ func (o *leveItem) header(feed *gofeed.Feed) string {
 </p>`
 
 	replacer := strings.NewReplacer(
-		"{link}", o.Link,
+		"{link}", it.Link,
 		"{origin}", html.EscapeString(feed.Title),
-		"{published}", o.PublishedParsed.Format("2006-01-02 15:04:05"),
-		"{title}", html.EscapeString(o.Title),
+		"{published}", it.PublishedParsed.Format("2006-01-02 15:04:05"),
+		"{title}", html.EscapeString(it.Title),
 	)
 
 	return replacer.Replace(tpl)
 }
-func (o *leveItem) footer() string {
+func (it *feedItem) footer() string {
 	const footerTPL = `<br><br>
 <a style="display: block; display:inline-block; border-top: 1px solid #ccc; padding-top: 5px; color: #666; text-decoration: none;"
    href="${href}"
@@ -63,12 +63,12 @@ Sent with <a style="color:#666; text-decoration:none; font-weight: bold;" href="
 </p>`
 
 	return strings.NewReplacer(
-		"${href}", o.Link,
-		"${pub_time}", o.PublishedParsed.Format("2006-01-02 15:04:05"),
+		"${href}", it.Link,
+		"${pub_time}", it.PublishedParsed.Format("2006-01-02 15:04:05"),
 	).Replace(footerTPL)
 }
-func (o *leveItem) patchContent(feed *gofeed.Feed) (content string, err error) {
-	doc, err := goquery.NewDocumentFromReader(strings.NewReader(o.Content()))
+func (it *feedItem) patchContent(feed *gofeed.Feed) (content string, err error) {
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(it.Content()))
 	if err != nil {
 		return
 	}
@@ -80,7 +80,7 @@ func (o *leveItem) patchContent(feed *gofeed.Feed) (content string, err error) {
 		img.RemoveAttr("srcset")
 
 		if src != "" {
-			img.SetAttr("src", o.patchRef(src))
+			img.SetAttr("src", it.patchRef(src))
 		}
 	})
 	doc.Find("iframe").Each(func(i int, iframe *goquery.Selection) {
@@ -92,19 +92,19 @@ func (o *leveItem) patchContent(feed *gofeed.Feed) (content string, err error) {
 	doc.Find("script").Each(func(i int, script *goquery.Selection) {
 		script.Remove()
 	})
-	doc.Find("body").PrependHtml(o.header(feed)).AppendHtml(o.footer())
+	doc.Find("body").PrependHtml(it.header(feed)).AppendHtml(it.footer())
 
 	if doc.Find("title").Length() == 0 {
 		doc.Find("head").AppendHtml("<title></title>")
 	}
 	if doc.Find("title").Text() == "" {
-		doc.Find("title").SetText(o.Item.Title)
+		doc.Find("title").SetText(it.Item.Title)
 	}
 
 	return doc.Html()
 }
-func (o *leveItem) patchRef(ref string) string {
-	itemURL, err := url.Parse(o.Item.Link)
+func (it *feedItem) patchRef(ref string) string {
+	itemURL, err := url.Parse(it.Item.Link)
 	if err != nil {
 		return ref
 	}
@@ -121,8 +121,8 @@ func (o *leveItem) patchRef(ref string) string {
 	return refURL.String()
 }
 
-func newLeveItem(item *gofeed.Item) *leveItem {
-	it := &leveItem{Item: item}
+func newFeedItem(item *gofeed.Item) *feedItem {
+	it := &feedItem{Item: item}
 
 	return it
 }
