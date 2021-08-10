@@ -10,23 +10,23 @@ import (
 	"github.com/mmcdole/gofeed"
 )
 
-type feedItem struct {
+type item struct {
 	*gofeed.Item
 }
 
-func (it *feedItem) UUID() string {
+func (it *item) UUID() string {
 	if it.Item.GUID == "" {
 		return it.Item.Link
 	}
 	return it.Item.GUID
 }
-func (it *feedItem) Content() string {
+func (it *item) Content() string {
 	if it.Item.Content == "" {
 		return it.Item.Description
 	}
 	return it.Item.Content
 }
-func (it *feedItem) filename() string {
+func (it *item) filename() string {
 	title := it.Title
 	digest := md5str(it.UUID())[0:4]
 	if len([]rune(title)) > 30 {
@@ -35,7 +35,7 @@ func (it *feedItem) filename() string {
 	title = strings.ReplaceAll(title, "/", ".")
 	return fmt.Sprintf("[%s.%s][%s]", title, digest, it.Item.PublishedParsed.Format("2006-01-02 15.04.05"))
 }
-func (it *feedItem) header(feed *gofeed.Feed) string {
+func (it *item) header(feed *gofeed.Feed) string {
 	const tpl = `
 <p>
 	<a title="Published: {published}" href="{link}" style="display:block; color: #000; padding-bottom: 10px; text-decoration: none; font-size:1em; font-weight: normal;">
@@ -53,7 +53,7 @@ func (it *feedItem) header(feed *gofeed.Feed) string {
 
 	return replacer.Replace(tpl)
 }
-func (it *feedItem) footer() string {
+func (it *item) footer() string {
 	const footerTPL = `<br><br>
 <a style="display: block; display:inline-block; border-top: 1px solid #ccc; padding-top: 5px; color: #666; text-decoration: none;"
    href="${href}"
@@ -67,7 +67,7 @@ Sent with <a style="color:#666; text-decoration:none; font-weight: bold;" href="
 		"${pub_time}", it.PublishedParsed.Format("2006-01-02 15:04:05"),
 	).Replace(footerTPL)
 }
-func (it *feedItem) patchContent(feed *gofeed.Feed) (content string, err error) {
+func (it *item) patchContent(feed *gofeed.Feed) (content string, err error) {
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(it.Content()))
 	if err != nil {
 		return
@@ -103,7 +103,7 @@ func (it *feedItem) patchContent(feed *gofeed.Feed) (content string, err error) 
 
 	return doc.Html()
 }
-func (it *feedItem) patchRef(ref string) string {
+func (it *item) patchRef(ref string) string {
 	itemURL, err := url.Parse(it.Item.Link)
 	if err != nil {
 		return ref
@@ -121,8 +121,8 @@ func (it *feedItem) patchRef(ref string) string {
 	return refURL.String()
 }
 
-func newFeedItem(item *gofeed.Item) *feedItem {
-	it := &feedItem{Item: item}
+func NewFeedItem(gf *gofeed.Item) (it *item) {
+	it = &item{Item: gf}
 
 	return it
 }

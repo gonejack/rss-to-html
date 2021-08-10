@@ -15,10 +15,11 @@ import (
 )
 
 var (
-	feeds   string
-	outdir  string
-	verbose bool
-	cmd     = &cobra.Command{
+	feeds    string
+	outdir   string
+	cachedir string
+	verbose  bool
+	cmd      = &cobra.Command{
 		Use:   "rss-to-html [-f feeds.txt]",
 		Short: "Command line tool to save RSS articles as html files.",
 		RunE:  run,
@@ -33,6 +34,7 @@ func init() {
 	{
 		flags.StringVarP(&feeds, "feeds", "f", "./feeds.txt", "feed list")
 		flags.StringVarP(&outdir, "outdir", "o", ".", "output directory")
+		flags.StringVarP(&cachedir, "cachedir", "c", "./seen", "cache directory")
 		flags.BoolVarP(&verbose, "verbose", "v", false, "verbose")
 	}
 
@@ -49,12 +51,18 @@ func run(c *cobra.Command, args []string) (err error) {
 		logrus.SetLevel(logrus.DebugLevel)
 	}
 
-	var feedURLs []string
+	// read feeds
+	var urls []string
 	file, err := os.OpenFile(feeds, os.O_RDONLY, 0766)
-	if errors.Is(err, os.ErrNotExist) {
-		file, err = os.Create(feeds)
-	}
-	if err == nil {
+	{
+		if errors.Is(err, os.ErrNotExist) {
+			file, err = os.Create(feeds)
+		}
+		if err != nil {
+			logrus.WithError(err).Fatalf("open %s failed", feeds)
+			return
+		}
+
 		scan := bufio.NewScanner(file)
 		for scan.Scan() {
 			feed := strings.TrimSpace(scan.Text())
@@ -66,32 +74,38 @@ func run(c *cobra.Command, args []string) (err error) {
 			case strings.HasPrefix(feed, "#"):
 				continue
 			}
-			feedURLs = append(feedURLs, feed)
+			urls = append(urls, feed)
 		}
 		err = scan.Err()
 		_ = file.Close()
-	}
-	if err != nil {
-		logrus.WithError(err).Fatalf("parse %s failed", feeds)
-		return
-	}
 
-	if len(feedURLs) == 0 {
+		if err != nil {
+			logrus.WithError(err).Fatalf("scan %s failed", feeds)
+			return
+		}
+	}
+	if len(urls) == 0 {
 		logrus.Errorf("no feeds given, put your feeds in %s", feeds)
 		return
 	}
 
-	for _, feedURL := range feedURLs {
-		log := logrus.WithField("feed", feedURL)
+	// mkdir
+	err = os.MkdirAll(cachedir, 0766)
+	if err != nil {
+		return
+	}
 
-		log.Debugf("fetching")
-		feed, err := fetchFeed(feedURL)
+	for _, u := range urls {
+		logger := logrus.WithField("feed", u)
+
+		logger.Debugf("fetching %s", u)
+		feed, err := fetchFeed(u)
 		if err != nil {
-			log.WithError(err).Errorf("fetch failed")
+			logger.WithError(err).Errorf("fetch failed")
 			continue
 		}
 
-		log.Debugf("processing")
+		logger.Debugf("processing %s", feed.Title)
 		err = process(feed)
 		if err != nil {
 			logrus.WithError(err).Errorf("process feed %s error", feed.Title)
@@ -101,38 +115,48 @@ func run(c *cobra.Command, args []string) (err error) {
 	return
 }
 func process(feed *gofeed.Feed) (err error) {
-	log := logrus.WithField("feed", feed.Title)
-
 	for _, it := range feed.Items {
-		item := newFeedItem(it)
-
-		log := log.WithFields(logrus.Fields{
+		item := NewFeedItem(it)
+		logger := logrus.WithFields(logrus.Fields{
 			"feed":  feed.Title,
 			"title": item.Title,
 		})
 
-		target := filepath.Join(outdir, htmlName(feed.Title, item.filename()))
-		if s, e := os.Stat(target); e == nil && s.Size() > 0 {
-			log.Debugf("skip")
+		html := htmlName(feed.Title, item.filename())
+
+		seen := filepath.Join(cachedir, html)
+		if _, e := os.Stat(seen); e == nil {
+			logger.Debugf("seen before: %s", seen)
 			continue
 		}
-
+		target := filepath.Join(outdir, html)
+		if s, e := os.Stat(target); e == nil && s.Size() > 0 {
+			logger.Infof("output exist: %s", target)
+			continue
+		}
 		content, err := item.patchContent(feed)
 		if err != nil {
-			log.Errorf("patch content failed: %s", err)
+			logger.Errorf("patch content failed: %s", err)
 			continue
 		}
 
-		log.Debugf("save")
+		logger.Debugf("save %s", target)
 		err = ioutil.WriteFile(target, []byte(content), 0666)
 		if err != nil {
-			log.Fatal(err)
+			logger.Fatal(err)
+		}
+
+		logger.Debugf("create %s", seen)
+		fd, err := os.OpenFile(seen, os.O_CREATE|os.O_EXCL, 0666)
+		if err == nil {
+			_ = fd.Close()
+		} else {
+			logger.Errorf("cannot create cache %s", err)
 		}
 	}
 
 	return
 }
-
 func Execute() {
 	err := cmd.Execute()
 	if err != nil {
