@@ -85,6 +85,9 @@ func run(c *cobra.Command, args []string) (err error) {
 		}
 	}
 	if len(urls) == 0 {
+		urls = args
+	}
+	if len(urls) == 0 {
 		logrus.Errorf("no feeds given, put your feeds in %s", feeds)
 		return
 	}
