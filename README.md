@@ -21,8 +21,9 @@ Usage:
   rss-to-html [-f feeds.txt] [flags]
 
 Flags:
-  -f, --feeds string    feed list (default "./feeds.txt")
-  -o, --outdir string   output directory (default ".")
-  -v, --verbose         verbose
-  -h, --help            help for rss-to-html
+  -f, --feeds string      feed list (default "./feeds.txt")
+  -o, --outdir string     output directory (default ".")
+  -c, --cachedir string   cache directory (default "./seen")
+  -v, --verbose           verbose
+  -h, --help              help for rss-to-html
 ```
