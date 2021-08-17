@@ -63,9 +63,9 @@ func run(c *cobra.Command, args []string) (err error) {
 			return
 		}
 
-		scan := bufio.NewScanner(file)
-		for scan.Scan() {
-			feed := strings.TrimSpace(scan.Text())
+		sc := bufio.NewScanner(file)
+		for sc.Scan() {
+			feed := strings.TrimSpace(sc.Text())
 			switch {
 			case feed == "":
 				continue
@@ -76,7 +76,7 @@ func run(c *cobra.Command, args []string) (err error) {
 			}
 			urls = append(urls, feed)
 		}
-		err = scan.Err()
+		err = sc.Err()
 		_ = file.Close()
 
 		if err != nil {
