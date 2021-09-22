@@ -3,138 +3,100 @@ package cmd
 import (
 	"bufio"
 	"errors"
+	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/antonfisher/nested-logrus-formatter"
+	"github.com/alecthomas/kong"
+	"github.com/jinzhu/gorm"
+	_ "github.com/jinzhu/gorm/dialects/sqlite"
 	"github.com/mmcdole/gofeed"
 	"github.com/sirupsen/logrus"
-	"github.com/spf13/cobra"
+	"github.com/uniplaces/carbon"
 )
 
-var (
-	feeds    string
-	outdir   string
-	cachedir string
-	verbose  bool
-	cmd      = &cobra.Command{
-		Use:   "rss-to-html [-f feeds.txt]",
-		Short: "Command line tool to save RSS articles as html files.",
-		RunE:  run,
-	}
-)
-
-func init() {
-	cmd.Flags().SortFlags = false
-	cmd.PersistentFlags().SortFlags = false
-
-	flags := cmd.PersistentFlags()
-	{
-		flags.StringVarP(&feeds, "feeds", "f", "./feeds.txt", "feed list")
-		flags.StringVarP(&outdir, "outdir", "o", ".", "output directory")
-		flags.StringVarP(&cachedir, "cachedir", "c", "./seen", "cache directory")
-		flags.BoolVarP(&verbose, "verbose", "v", false, "verbose")
-	}
-
-	logrus.SetFormatter(&formatter.Formatter{
-		TimestampFormat: "2006-01-02 15:04:05",
-		//NoColors:        true,
-		HideKeys:    true,
-		CallerFirst: true,
-		FieldsOrder: []string{"feed", "feedItem", "link", "file"},
-	})
+type RSSToHtml struct {
+	options
+	feeds []string
+	db    *gorm.DB
 }
-func run(c *cobra.Command, args []string) (err error) {
-	if verbose {
+type options struct {
+	Feeds   string `short:"f" default:"feeds.txt" help:"Feed list file."`
+	Output  string `short:"o" default:"./" help:"Output directory."`
+	Db      string `default:"record.db" help:"SQLLite3 db file."`
+	Verbose bool   `short:"v" help:"Verbose printing."`
+
+	Args []string `name:"feed" arg:"" optional:""`
+}
+type record struct {
+	gorm.Model
+	Filename string
+	Content  string
+}
+
+func (r *RSSToHtml) Run() (err error) {
+	kong.Parse(&r.options,
+		kong.Name("rss-to-html"),
+		kong.Description("Command line tool to save RSS articles as html files."),
+		kong.UsageOnError(),
+	)
+
+	if r.Verbose {
 		logrus.SetLevel(logrus.DebugLevel)
 	}
 
-	// read feeds
-	var urls []string
-	file, err := os.OpenFile(feeds, os.O_RDONLY, 0766)
-	{
-		if errors.Is(err, os.ErrNotExist) {
-			file, err = os.Create(feeds)
-		}
-		if err != nil {
-			logrus.WithError(err).Fatalf("open %s failed", feeds)
-			return
-		}
-
-		sc := bufio.NewScanner(file)
-		for sc.Scan() {
-			feed := strings.TrimSpace(sc.Text())
-			switch {
-			case feed == "":
-				continue
-			case strings.HasPrefix(feed, "//"):
-				continue
-			case strings.HasPrefix(feed, "#"):
-				continue
-			}
-			urls = append(urls, feed)
-		}
-		err = sc.Err()
-		_ = file.Close()
-
-		if err != nil {
-			logrus.WithError(err).Fatalf("scan %s failed", feeds)
-			return
-		}
-	}
-	if len(urls) == 0 {
-		urls = args
-	}
-	if len(urls) == 0 {
-		logrus.Errorf("no feeds given, put your feeds in %s", feeds)
-		return
-	}
-
-	// mkdir
-	err = os.MkdirAll(cachedir, 0766)
+	err = os.MkdirAll(r.Output, 0766)
 	if err != nil {
-		return
+		return fmt.Errorf("output directory %s already exist", r.Output)
 	}
 
-	for _, u := range urls {
-		logger := logrus.WithField("feed", u)
+	err = r.parseFeeds()
+	if err != nil {
+		return fmt.Errorf("parse %s failed: %s", r.Feeds, err)
+	}
+	if len(r.feeds) == 0 {
+		return fmt.Errorf("no feeds given, put your feeds in %s", r.Feeds)
+	}
 
-		logger.Debugf("fetching %s", u)
-		feed, err := fetchFeed(u)
+	r.db, err = gorm.Open("sqlite3", r.Db)
+	if err != nil {
+		return fmt.Errorf("open db file %s failed: %s", r.Db, err)
+	}
+	r.db.AutoMigrate(new(record))
+	r.db.Unscoped().Delete(new(record), "updated_at < ?", carbon.Now().SubMonth().String())
+	defer r.db.Close()
+
+	return r.run()
+}
+func (r *RSSToHtml) run() (err error) {
+	for _, url := range r.feeds {
+		logger := logrus.WithField("feed", url)
+
+		logger.Debugf("fetching")
+		feed, err := fetchFeed(url)
 		if err != nil {
-			logger.WithError(err).Errorf("fetch failed")
-			continue
+			return fmt.Errorf("fetch %s failed: %w", url, err)
 		}
 
 		logger.Debugf("processing %s", feed.Title)
-		err = process(feed)
+		err = r.process(feed)
 		if err != nil {
-			logrus.WithError(err).Errorf("process feed %s error", feed.Title)
+			return fmt.Errorf("process %s failed: %w", feed.Title, err)
 		}
 	}
-
 	return
 }
-func process(feed *gofeed.Feed) (err error) {
+func (r *RSSToHtml) process(feed *gofeed.Feed) (err error) {
 	for _, it := range feed.Items {
 		item := NewFeedItem(it)
-		logger := logrus.WithFields(logrus.Fields{
-			"feed":  feed.Title,
-			"title": item.Title,
-		})
-
 		html := htmlName(feed.Title, item.filename())
+		logger := logrus.WithField("html", html)
 
-		seen := filepath.Join(cachedir, html)
-		if _, e := os.Stat(seen); e == nil {
-			logger.Debugf("seen before: %s", seen)
-			continue
-		}
-		target := filepath.Join(outdir, html)
+		target := filepath.Join(r.Output, html)
 		if s, e := os.Stat(target); e == nil && s.Size() > 0 {
-			logger.Infof("output exist: %s", target)
+			logger.Infof("output exist")
 			continue
 		}
 		content, err := item.patchContent(feed)
@@ -143,26 +105,61 @@ func process(feed *gofeed.Feed) (err error) {
 			continue
 		}
 
-		logger.Debugf("save %s", target)
-		err = ioutil.WriteFile(target, []byte(content), 0666)
-		if err != nil {
-			logger.Fatal(err)
+		var rec record
+		r.db.FirstOrInit(&rec, "filename == ?", html)
+		if rec.Content == content {
+			logger.Debugf("skip")
+			continue
 		}
 
-		logger.Debugf("create %s", seen)
-		fd, err := os.OpenFile(seen, os.O_CREATE|os.O_EXCL, 0666)
-		if err == nil {
-			_ = fd.Close()
-		} else {
-			logger.Errorf("cannot create cache %s", err)
+		logger.Debugf("saving")
+		err = ioutil.WriteFile(target, []byte(content), 0666)
+		if err != nil {
+			return fmt.Errorf("write %s failed: %s", target, err)
 		}
+
+		r.db.Save(&record{Filename: html, Content: content})
 	}
 
 	return
 }
-func Execute() {
-	err := cmd.Execute()
-	if err != nil {
-		logrus.Fatal(err)
+func (r *RSSToHtml) parseFeeds() (err error) {
+	if len(r.Args) > 0 {
+		r.feeds = r.Args
+		return
 	}
+
+	fd, err := os.OpenFile(r.Feeds, os.O_RDONLY, 0766)
+	if errors.Is(err, os.ErrNotExist) {
+		fd, err = os.Create(r.Feeds)
+	}
+	if err != nil {
+		return fmt.Errorf("open %s failed", r.Feeds)
+	}
+	defer fd.Close()
+
+	scan := bufio.NewScanner(fd)
+	for scan.Scan() {
+		feed := strings.TrimSpace(scan.Text())
+		switch {
+		case feed == "":
+			continue
+		case strings.HasPrefix(feed, "//"):
+			continue
+		case strings.HasPrefix(feed, "#"):
+			continue
+		}
+		r.feeds = append(r.feeds, feed)
+	}
+
+	err = scan.Err()
+	if err != nil {
+		return fmt.Errorf("scan %s failed", r.Feeds)
+	}
+
+	return
+}
+
+func New() *RSSToHtml {
+	return new(RSSToHtml)
 }

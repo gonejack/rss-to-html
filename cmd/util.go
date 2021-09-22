@@ -25,6 +25,5 @@ func timeout10s() (context.Context, context.CancelFunc) {
 func fetchFeed(url string) (*gofeed.Feed, error) {
 	timeout, cancel := timeout10s()
 	defer cancel()
-
 	return gofeed.NewParser().ParseURLWithContext(url, timeout)
 }
