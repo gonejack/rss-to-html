@@ -27,12 +27,13 @@ type options struct {
 	Output  string `short:"o" default:"./" help:"Output directory."`
 	Db      string `default:"record.db" help:"SQLLite3 db file."`
 	Verbose bool   `short:"v" help:"Verbose printing."`
+	About   bool   `help:"Show about."`
 
 	Args []string `name:"feed" arg:"" optional:""`
 }
 type record struct {
 	gorm.Model
-	Filename string
+	Filename string `gorm:"index"`
 	Content  string
 }
 
@@ -42,8 +43,11 @@ func (r *RSSToHtml) Run() (err error) {
 		kong.Description("Command line tool to save RSS articles as html files."),
 		kong.UsageOnError(),
 	)
-
-	if r.Verbose {
+	switch {
+	case r.About:
+		fmt.Println("Visit https://github.com/gonejack/rss-to-html")
+		return
+	case r.Verbose:
 		logrus.SetLevel(logrus.DebugLevel)
 	}
 
