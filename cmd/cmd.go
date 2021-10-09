@@ -110,7 +110,7 @@ func (r *RSSToHtml) process(feed *gofeed.Feed) (err error) {
 		}
 
 		var rec record
-		r.db.FirstOrInit(&rec, "filename == ?", html)
+		r.db.First(&rec, "filename == ?", html)
 		if rec.Content == content {
 			logger.Debugf("skip")
 			continue
