@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -117,7 +116,7 @@ func (r *RSSToHtml) process(feed *gofeed.Feed) (err error) {
 		}
 
 		logger.Debugf("saving")
-		err = ioutil.WriteFile(target, []byte(content), 0666)
+		err = os.WriteFile(target, []byte(content), 0666)
 		if err != nil {
 			return fmt.Errorf("write %s failed: %s", target, err)
 		}
@@ -133,16 +132,16 @@ func (r *RSSToHtml) parseFeeds() (err error) {
 		return
 	}
 
-	fd, err := os.OpenFile(r.Feeds, os.O_RDONLY, 0766)
+	f, err := os.OpenFile(r.Feeds, os.O_RDONLY, 0766)
 	if errors.Is(err, os.ErrNotExist) {
-		fd, err = os.Create(r.Feeds)
+		f, err = os.Create(r.Feeds)
 	}
 	if err != nil {
 		return fmt.Errorf("open %s failed", r.Feeds)
 	}
-	defer fd.Close()
+	defer f.Close()
 
-	scan := bufio.NewScanner(fd)
+	scan := bufio.NewScanner(f)
 	for scan.Scan() {
 		feed := strings.TrimSpace(scan.Text())
 		switch {
