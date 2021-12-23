@@ -1,6 +1,6 @@
 # rss-to-html
 
-Command line tool to save RSS articles as html files.
+This command line saves RSS articles as .html files.
 
 ![GitHub go.mod Go version](https://img.shields.io/github/go-mod/go-version/gonejack/rss-to-html)
 ![Build](https://github.com/gonejack/rss-to-html/actions/workflows/go.yml/badge.svg)
@@ -14,16 +14,16 @@ Command line tool to save RSS articles as html files.
 
 ### Usage
 
-1. Pass URLs directly
-
-```shell
-> rss-to-html urls...
-```
-
-2. Save your feed urls into `feeds.txt`
+- Save your feed urls into `feeds.txt`
 
 ```shell
 > rss-to-html -f feeds.txt
+```
+
+- or pass URLs directly
+
+```shell
+> rss-to-html urls...
 ```
 
 ```
