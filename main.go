@@ -15,10 +15,9 @@ func init() {
 		CallerFirst: true,
 	})
 }
-
 func main() {
-	err := cmd.New().Run()
-	if err != nil {
+	var c cmd.RSSToHtml
+	if err := c.Run(); err != nil {
 		logrus.Fatal(err)
 	}
 }

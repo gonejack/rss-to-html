@@ -15,28 +15,28 @@ type item struct {
 	*gofeed.Item
 }
 
-func (it *item) UUID() string {
-	if it.Item.GUID == "" {
-		return it.Item.Link
+func (i *item) UUID() string {
+	if i.GUID == "" {
+		return i.Link
 	}
-	return it.Item.GUID
+	return i.GUID
 }
-func (it *item) Content() string {
-	if it.Item.Content == "" {
-		return it.Item.Description
+func (i *item) Content() string {
+	if i.Item.Content == "" {
+		return i.Item.Description
 	}
-	return it.Item.Content
+	return i.Item.Content
 }
-func (it *item) filename() string {
-	title := it.Title
-	digest := md5str(it.UUID())[0:4]
+func (i *item) filename() string {
+	title := i.Title
+	digest := md5str(i.UUID())[0:4]
 	if len([]rune(title)) > 30 {
 		title = string([]rune(title)[0:30]) + "..."
 	}
 	title = strings.ReplaceAll(title, "/", ".")
-	return fmt.Sprintf("[%s.%s][%s]", title, digest, it.Item.PublishedParsed.Format("2006-01-02 15.04.05"))
+	return fmt.Sprintf("[%s.%s][%s]", title, digest, i.Item.PublishedParsed.Format("2006-01-02 15.04.05"))
 }
-func (it *item) header(feed *gofeed.Feed) string {
+func (i *item) header(feed *gofeed.Feed) string {
 	const tpl = `
 <p>
 	<a title="Published: {published}" href="{link}" style="display:block; color: #000; padding-bottom: 10px; text-decoration: none; font-size:1em; font-weight: normal;">
@@ -46,15 +46,15 @@ func (it *item) header(feed *gofeed.Feed) string {
 </p>`
 
 	replacer := strings.NewReplacer(
-		"{link}", it.Link,
+		"{link}", i.Link,
 		"{origin}", html.EscapeString(feed.Title),
-		"{published}", it.PublishedParsed.Format("2006-01-02 15:04:05"),
-		"{title}", html.EscapeString(it.Title),
+		"{published}", i.PublishedParsed.Format("2006-01-02 15:04:05"),
+		"{title}", html.EscapeString(i.Title),
 	)
 
 	return replacer.Replace(tpl)
 }
-func (it *item) footer() string {
+func (i *item) footer() string {
 	const footerTPL = `<br><br>
 <a style="display: block; display:inline-block; border-top: 1px solid #ccc; padding-top: 5px; color: #666; text-decoration: none;"
    href="${href}"
@@ -64,24 +64,29 @@ Sent with <a style="color:#666; text-decoration:none; font-weight: bold;" href="
 </p>`
 
 	return strings.NewReplacer(
-		"${href}", it.Link,
-		"${pub_time}", it.PublishedParsed.Format("2006-01-02 15:04:05"),
+		"${href}", i.Link,
+		"${pub_time}", i.PublishedParsed.Format("2006-01-02 15:04:05"),
 	).Replace(footerTPL)
 }
-func (it *item) patchContent(feed *gofeed.Feed) (content string, err error) {
-	doc, err := goquery.NewDocumentFromReader(strings.NewReader(it.Content()))
+func (i *item) patchContent(feed *gofeed.Feed) (content string, err error) {
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(i.Content()))
 	if err != nil {
 		return
 	}
 
-	doc.Find("img").Each(func(i int, img *goquery.Selection) {
-		src, _ := img.Attr("src")
-
+	if doc.Find("title").Length() == 0 {
+		doc.Find("head").AppendHtml("<title></title>")
+	}
+	if doc.Find("title").Text() == "" {
+		doc.Find("title").SetText(i.Title)
+	}
+	doc.Find("img").Each(func(_ int, img *goquery.Selection) {
 		img.RemoveAttr("loading")
 		img.RemoveAttr("srcset")
 
+		src, _ := img.Attr("src")
 		if src != "" {
-			img.SetAttr("src", it.patchRef(src))
+			img.SetAttr("src", i.patchReference(src))
 		}
 	})
 	doc.Find("iframe").Each(func(i int, iframe *goquery.Selection) {
@@ -93,49 +98,40 @@ func (it *item) patchContent(feed *gofeed.Feed) (content string, err error) {
 	doc.Find("script").Each(func(i int, script *goquery.Selection) {
 		script.Remove()
 	})
-	doc.Find("body").PrependHtml(it.header(feed)).AppendHtml(it.footer())
-
-	if doc.Find("title").Length() == 0 {
-		doc.Find("head").AppendHtml("<title></title>")
-	}
-	if doc.Find("title").Text() == "" {
-		doc.Find("title").SetText(it.Item.Title)
-	}
+	doc.Find("body").PrependHtml(i.header(feed)).AppendHtml(i.footer())
 
 	return doc.Html()
 }
-func (it *item) patchRef(ref string) string {
-	itemURL, err := url.Parse(it.Item.Link)
+func (i *item) patchReference(ref string) string {
+	u, err := url.Parse(i.Link)
 	if err != nil {
 		return ref
 	}
-	refURL, err := url.Parse(ref)
+	uu, err := url.Parse(ref)
 	if err != nil {
 		return ref
 	}
-	if refURL.Scheme == "" {
-		refURL.Scheme = itemURL.Scheme
+	if uu.Scheme == "" {
+		uu.Scheme = u.Scheme
 	}
-	if refURL.Host == "" {
-		refURL.Host = itemURL.Host
+	if uu.Host == "" {
+		uu.Host = u.Host
 	}
-	return refURL.String()
+	return uu.String()
 }
 
-func NewFeedItem(gf *gofeed.Item) (it *item) {
-	it = &item{
+func NewFeedItem(gf *gofeed.Item) (i *item) {
+	i = &item{
 		Item: gf,
 	}
 	now := time.Now()
-	if it.UpdatedParsed == nil {
-		it.UpdatedParsed = &now
-	} else {
-		*it.UpdatedParsed = it.UpdatedParsed.Local()
+	if i.UpdatedParsed == nil {
+		i.UpdatedParsed = &now
 	}
-	if it.PublishedParsed == nil {
-		it.PublishedParsed = &now
-	} else {
-		*it.PublishedParsed = it.PublishedParsed.Local()
+	if i.PublishedParsed == nil {
+		i.PublishedParsed = &now
 	}
-	return it
+	*i.UpdatedParsed = i.UpdatedParsed.Local()
+	*i.PublishedParsed = i.PublishedParsed.Local()
+	return
 }
