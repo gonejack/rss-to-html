@@ -120,6 +120,7 @@ func (r *RSSToHtml) process(feed *gofeed.Feed) (err error) {
 		if err != nil {
 			return fmt.Errorf("write %s failed: %s", target, err)
 		}
+		_ = os.Chtimes(target, item.PublishedParsed.UTC(), item.PublishedParsed.UTC())
 
 		r.db.Save(&record{Filename: html, Content: content})
 	}

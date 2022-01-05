@@ -5,6 +5,7 @@ import (
 	"html"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/mmcdole/gofeed"
@@ -122,7 +123,19 @@ func (it *item) patchRef(ref string) string {
 }
 
 func NewFeedItem(gf *gofeed.Item) (it *item) {
-	it = &item{Item: gf}
-
+	it = &item{
+		Item: gf,
+	}
+	now := time.Now()
+	if it.UpdatedParsed == nil {
+		it.UpdatedParsed = &now
+	} else {
+		*it.UpdatedParsed = it.UpdatedParsed.Local()
+	}
+	if it.PublishedParsed == nil {
+		it.PublishedParsed = &now
+	} else {
+		*it.PublishedParsed = it.PublishedParsed.Local()
+	}
 	return it
 }
