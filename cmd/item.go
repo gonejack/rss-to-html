@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"html"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -15,28 +16,28 @@ type item struct {
 	*gofeed.Item
 }
 
-func (i *item) UUID() string {
-	if i.GUID == "" {
-		return i.Link
+func (it *item) UUID() string {
+	if it.GUID == "" {
+		return it.Link
 	}
-	return i.GUID
+	return it.GUID
 }
-func (i *item) Content() string {
-	if i.Item.Content == "" {
-		return i.Item.Description
+func (it *item) Content() string {
+	if it.Item.Content == "" {
+		return it.Item.Description
 	}
-	return i.Item.Content
+	return it.Item.Content
 }
-func (i *item) filename() string {
-	title := i.Title
-	digest := md5str(i.UUID())[0:4]
+func (it *item) filename() string {
+	title := it.Title
+	digest := md5str(it.UUID())[0:4]
 	if len([]rune(title)) > 30 {
 		title = string([]rune(title)[0:30]) + "..."
 	}
 	title = strings.ReplaceAll(title, "/", ".")
-	return fmt.Sprintf("[%s.%s][%s]", title, digest, i.Item.PublishedParsed.Format("2006-01-02 15.04.05"))
+	return fmt.Sprintf("[%s.%s][%s]", title, digest, it.Item.PublishedParsed.Format("2006-01-02 15.04.05"))
 }
-func (i *item) header(feed *gofeed.Feed) string {
+func (it *item) header(feed *gofeed.Feed) string {
 	const tpl = `
 <p>
 	<a title="Published: {published}" href="{link}" style="display:block; color: #000; padding-bottom: 10px; text-decoration: none; font-size:1em; font-weight: normal;">
@@ -46,15 +47,15 @@ func (i *item) header(feed *gofeed.Feed) string {
 </p>`
 
 	replacer := strings.NewReplacer(
-		"{link}", i.Link,
+		"{link}", it.Link,
 		"{origin}", html.EscapeString(feed.Title),
-		"{published}", i.PublishedParsed.Format("2006-01-02 15:04:05"),
-		"{title}", html.EscapeString(i.Title),
+		"{published}", it.PublishedParsed.Format("2006-01-02 15:04:05"),
+		"{title}", html.EscapeString(it.Title),
 	)
 
 	return replacer.Replace(tpl)
 }
-func (i *item) footer() string {
+func (it *item) footer() string {
 	const footerTPL = `<br><br>
 <a style="display: block; display:inline-block; border-top: 1px solid #ccc; padding-top: 5px; color: #666; text-decoration: none;"
    href="${href}"
@@ -64,12 +65,12 @@ Sent with <a style="color:#666; text-decoration:none; font-weight: bold;" href="
 </p>`
 
 	return strings.NewReplacer(
-		"${href}", i.Link,
-		"${pub_time}", i.PublishedParsed.Format("2006-01-02 15:04:05"),
+		"${href}", it.Link,
+		"${pub_time}", it.PublishedParsed.Format("2006-01-02 15:04:05"),
 	).Replace(footerTPL)
 }
-func (i *item) patchContent(feed *gofeed.Feed) (content string, err error) {
-	doc, err := goquery.NewDocumentFromReader(strings.NewReader(i.Content()))
+func (it *item) patchContent(feed *gofeed.Feed) (content string, err error) {
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(it.Content()))
 	if err != nil {
 		return
 	}
@@ -78,7 +79,7 @@ func (i *item) patchContent(feed *gofeed.Feed) (content string, err error) {
 		doc.Find("head").AppendHtml("<title></title>")
 	}
 	if doc.Find("title").Text() == "" {
-		doc.Find("title").SetText(i.Title)
+		doc.Find("title").SetText(it.Title)
 	}
 	doc.Find("img").Each(func(_ int, img *goquery.Selection) {
 		img.RemoveAttr("loading")
@@ -86,7 +87,7 @@ func (i *item) patchContent(feed *gofeed.Feed) (content string, err error) {
 
 		src, _ := img.Attr("src")
 		if src != "" {
-			img.SetAttr("src", i.patchReference(src))
+			img.SetAttr("src", it.patchReference(src))
 		}
 	})
 	doc.Find("iframe").Each(func(i int, iframe *goquery.Selection) {
@@ -98,12 +99,33 @@ func (i *item) patchContent(feed *gofeed.Feed) (content string, err error) {
 	doc.Find("script").Each(func(i int, script *goquery.Selection) {
 		script.Remove()
 	})
-	doc.Find("body").PrependHtml(i.header(feed)).AppendHtml(i.footer())
+	doc.Find("body").PrependHtml(it.header(feed)).AppendHtml(it.footer())
+
+	u, err := url.Parse(it.Link)
+	if err == nil {
+		switch {
+		case strings.HasSuffix(u.Host, "micmicidol.com"):
+			doc.Find("a>img").Each(func(i int, img *goquery.Selection) {
+				origin, exist := img.Parent().Attr("href")
+				if exist {
+					img.SetAttr("src", origin)
+				}
+			})
+		case strings.HasSuffix(u.Host, "bigboobsjapan.com"):
+			exp := regexp.MustCompile(`(.+)(-\d{1,4}x\d{1,4})(\.[^.]+$)`)
+			doc.Find("a>img").Each(func(i int, img *goquery.Selection) {
+				src, exist := img.Attr("src")
+				if exist && exp.MatchString(src) {
+					img.SetAttr("src", exp.ReplaceAllString(src, "$1$3"))
+				}
+			})
+		}
+	}
 
 	return doc.Html()
 }
-func (i *item) patchReference(ref string) string {
-	u, err := url.Parse(i.Link)
+func (it *item) patchReference(ref string) string {
+	u, err := url.Parse(it.Link)
 	if err != nil {
 		return ref
 	}
