@@ -1,8 +1,11 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
-	"html"
+	"io"
+	"log"
+	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
@@ -10,6 +13,7 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/mmcdole/gofeed"
+	"golang.org/x/net/html"
 )
 
 type item struct {
@@ -27,6 +31,38 @@ func (it *item) Content() string {
 		return it.Item.Description
 	}
 	return it.Item.Content
+}
+func (it *item) FullContent() (content string) {
+	switch {
+	case strings.Contains(it.Link, "darkserika.com"):
+		htm, err := it.grabDoc()
+		if err == nil {
+			doc, err := goquery.NewDocumentFromReader(strings.NewReader(htm))
+			if err != nil {
+				break
+			}
+			if doc.Find("figure").Length() <= 0 {
+				break
+			}
+			doc.Find("head > style, head > script, head > link[rel=stylesheet]").Remove()
+			doc.Find("*").Contents().Each(func(i int, s *goquery.Selection) {
+				if s.Get(0).Type == html.CommentNode {
+					s.Remove()
+				}
+			})
+			var sb strings.Builder
+			sb.WriteString("<p>")
+			doc.Find("figure > a > img").Each(func(i int, e *goquery.Selection) {
+				_ = goquery.Render(&sb, e)
+			})
+			sb.WriteString("</p>")
+			doc.Find("body").Children().Remove()
+			doc.Find("body").AppendHtml(sb.String())
+			x, _ := doc.Html()
+			return x
+		}
+	}
+	return it.Content()
 }
 func (it *item) filename() string {
 	title := it.Title
@@ -70,7 +106,7 @@ Sent with <a style="color:#666; text-decoration:none; font-weight: bold;" href="
 	).Replace(footerTPL)
 }
 func (it *item) patchContent(feed *gofeed.Feed) (content string, err error) {
-	doc, err := goquery.NewDocumentFromReader(strings.NewReader(it.Content()))
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(it.FullContent()))
 	if err != nil {
 		return
 	}
@@ -140,6 +176,30 @@ func (it *item) patchReference(ref string) string {
 		uu.Host = u.Host
 	}
 	return uu.String()
+}
+func (it *item) grabDoc() (html string, err error) {
+	timeout, cancel := context.WithTimeout(context.TODO(), time.Second*20)
+	defer cancel()
+
+	rq, err := http.NewRequestWithContext(timeout, http.MethodGet, it.Link, nil)
+	if err != nil {
+		log.Printf("cannot request link %s", it.Link)
+		return
+	}
+	rq.Header.Set("referer", it.Link)
+	rq.Header.Set("user-agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:94.0) Gecko/20100101 Firefox/94.0")
+
+	rp, err := http.DefaultClient.Do(rq)
+	if err != nil {
+		log.Printf("cannot grab link %s", it.Link)
+		return
+	}
+	dat, err := io.ReadAll(rp.Body)
+	if err != nil {
+		log.Printf("cannot read response of %s", it.Link)
+		return
+	}
+	return strings.ReplaceAll(string(dat), "<!--!-->", ""), nil
 }
 
 func NewFeedItem(gf *gofeed.Item) (i *item) {

@@ -14,6 +14,7 @@ import (
 	"github.com/mmcdole/gofeed"
 	"github.com/sirupsen/logrus"
 	"github.com/uniplaces/carbon"
+	"github.com/yosssi/gohtml"
 )
 
 type RSSToHtml struct {
@@ -103,15 +104,17 @@ func (c *RSSToHtml) process(feed *gofeed.Feed) (err error) {
 			logger.Infof("output exist")
 			continue
 		}
+
 		content, err := item.patchContent(feed)
 		if err != nil {
 			logger.Errorf("patch content failed: %s", err)
 			continue
 		}
+		content = gohtml.Format(content)
 
-		var rcd record
-		c.db.First(&rcd, "filename == ?", name)
-		if rcd.Content == content {
+		var r record
+		c.db.First(&r, "filename == ?", name)
+		if r.Content == content {
 			logger.Debugf("skip")
 			continue
 		}
