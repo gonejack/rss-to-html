@@ -58,7 +58,7 @@ func (c *RSSToHtml) Run() (err error) {
 
 	err = c.parseFeeds()
 	if err != nil {
-		return fmt.Errorf("parse %s failed: %s", c.Feeds, err)
+		return fmt.Errorf("parse %s failed: %w", c.Feeds, err)
 	}
 	if len(c.feeds) == 0 {
 		return fmt.Errorf("no feeds given, put your feeds in %s", c.Feeds)
@@ -66,7 +66,7 @@ func (c *RSSToHtml) Run() (err error) {
 
 	c.db, err = gorm.Open("sqlite3", c.Db)
 	if err != nil {
-		return fmt.Errorf("open db file %s failed: %s", c.Db, err)
+		return fmt.Errorf("open db file %s failed: %w", c.Db, err)
 	}
 	c.db.AutoMigrate(new(record))
 	c.db.Unscoped().Delete(new(record), "updated_at < ?", carbon.Now().SubMonth().String())
@@ -122,7 +122,7 @@ func (c *RSSToHtml) process(feed *gofeed.Feed) (err error) {
 		logger.Debugf("saving")
 		err = os.WriteFile(output, []byte(content), 0666)
 		if err != nil {
-			return fmt.Errorf("write %s failed: %s", output, err)
+			return fmt.Errorf("write %s failed: %w", output, err)
 		}
 		_ = os.Chtimes(output, item.PublishedParsed.UTC(), item.PublishedParsed.UTC())
 		c.db.Save(&record{Filename: name, Content: content})
