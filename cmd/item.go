@@ -7,7 +7,6 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"regexp"
 	"strings"
 	"time"
 
@@ -136,27 +135,6 @@ func (it *item) patchContent(feed *gofeed.Feed) (content string, err error) {
 		script.Remove()
 	})
 	doc.Find("body").PrependHtml(it.header(feed)).AppendHtml(it.footer())
-
-	u, err := url.Parse(it.Link)
-	if err == nil {
-		switch {
-		case strings.HasSuffix(u.Host, "micmicidol.com"):
-			doc.Find("a>img").Each(func(i int, img *goquery.Selection) {
-				origin, exist := img.Parent().Attr("href")
-				if exist {
-					img.SetAttr("src", origin)
-				}
-			})
-		case strings.HasSuffix(u.Host, "bigboobsjapan.com"):
-			exp := regexp.MustCompile(`(.+)(-\d{1,4}x\d{1,4})(\.[^.]+$)`)
-			doc.Find("a>img").Each(func(i int, img *goquery.Selection) {
-				src, exist := img.Attr("src")
-				if exist && exp.MatchString(src) {
-					img.SetAttr("src", exp.ReplaceAllString(src, "$1$3"))
-				}
-			})
-		}
-	}
 
 	return doc.Html()
 }
